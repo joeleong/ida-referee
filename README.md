@@ -1,6 +1,6 @@
 # Referee
 
-This is a python port of James Koppel's Referee IDA plugin (https://github.com/jkoppel/project-ironfist/tree/master/tools/Revitalize/Referee)
+This is a python port of James Koppel's Referee IDA plugin (https://github.com/jkoppel/project-ironfist/tree/master/tools/Revitalize/Referee) with some updates
 
 
 ## What it is
@@ -26,7 +26,6 @@ Referee does not do type inference;  you will still need to give types to your f
 
  * If you annotate a function to remove a struct-member usage, decompiling the function again will remove the corresponding xrefs.
  * Referee only tracks accesses to structure members, not pointer-passing. Writes and references to structure members are also marked as reads.
- * Since there is no easy way to map a decompiled expression back to a corresponding location in the assembly, Referee creates all xrefs from the start of the function.
 
 ## Related
 - http://reverseengineering.stackexchange.com/questions/2139/is-it-possible-to-create-data-xrefs-manually

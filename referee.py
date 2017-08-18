@@ -23,9 +23,9 @@ def is_assn(t):
 
 def add_struct_xrefs(cfunc):
     class xref_adder_t(idaapi.ctree_visitor_t):
-        def __init__(self, ea):
-            idaapi.ctree_visitor_t.__init__(self, idaapi.CV_FAST)
-            self.fn_ea = ea
+        def __init__(self, cfunc):
+            idaapi.ctree_visitor_t.__init__(self, idaapi.CV_PARENTS)
+            self.cfunc = cfunc
 
         def visit_expr(self, e):
             dr = idaapi.dr_R | idaapi.XREF_USER
@@ -63,7 +63,19 @@ def add_struct_xrefs(cfunc):
                 stid  = idaapi.get_struc_id(strname)
                 s = idaapi.get_struc(stid)
                 mem = idaapi.get_member(s, moff)
-                ea = e.ea if e.ea != idaapi.BADADDR else self.fn_ea
+                if e.ea != idaapi.BADADDR:
+                    ea = e.ea
+                else:
+                    parent = e
+                    while True:
+                        parent = self.cfunc.body.find_parent_of(parent)
+                        if parent is None:
+                            ea = self.cfunc.entry_ea
+                            break
+                        if parent.ea != idaapi.BADADDR:
+                            ea = parent.ea
+                            break
+
 
                 if s:
                     idaapi.add_dref(ea, stid, idaapi.dr_R | idaapi.XREF_USER)
@@ -82,7 +94,7 @@ def add_struct_xrefs(cfunc):
 
                     
             return 0
-    adder = xref_adder_t(cfunc.entry_ea)
+    adder = xref_adder_t(cfunc)
     adder.apply_to_exprs(cfunc.body, None)
 
 
