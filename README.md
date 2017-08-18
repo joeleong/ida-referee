@@ -1,6 +1,7 @@
 # Referee
 
-This is a python port of James Koppel's Referee IDA plugin (https://github.com/jkoppel/project-ironfist/tree/master/tools/Revitalize/Referee) with some updates
+This is a python port of James Koppel's Referee IDA plugin with some updates:
+https://github.com/jkoppel/project-ironfist/tree/master/tools/Revitalize/Referee
 
 
 ## What it is
@@ -20,7 +21,7 @@ Copy the plugin into the IDA "plugins" folder
 
 Referee will automatically run whenever a function is decompiled. It is recommended that you decompile the entire binary for maximum information. You can see the cross-references that Referee adds by opening a structure in the Structures window, highlighting a field of a structure, and pressing "X."
 
-Referee does not do type inference;  you will still need to give types to your functions for it to find structure uses.
+Referee does not do type inference; you will still need to give types to your functions for it to find structure uses.
 
 ## Notes
 
