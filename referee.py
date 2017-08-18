@@ -5,9 +5,11 @@ import logging
 
 import idaapi
 
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.WARN)
 log = logging.getLogger("referee")
 
+
+es = []
 
 def is_assn(t):
     return (
@@ -34,6 +36,9 @@ def add_struct_xrefs(cfunc):
         def visit_expr(self, e):
             dr = idaapi.dr_R | idaapi.XREF_USER
 
+            if e.type.is_struct():
+                log.warn("STRUCT {}: {} 0x{:X} {} {} {} {}".format(e.opname, len(es), e.ea, e, e.x, dr, e.type.dstr()))
+
             # We wish to know what context a struct usage occurs in
             # so we can determine what kind of xref to create. Unfortunately,
             # a post-order traversal makes this difficult.
@@ -45,10 +50,14 @@ def add_struct_xrefs(cfunc):
             if is_assn(e.op):
                 e = e.x
                 dr = idaapi.dr_W | idaapi.XREF_USER
+                log.warn("{}: {} 0x{:X} {} {} {} {}".format(e.opname, len(es), e.ea, e, e.x, dr, e.type.dstr()))
+                es.append(e)
 
             if e.op == idaapi.cot_ref:
                 e = e.x
                 dr = idaapi.dr_O | idaapi.XREF_USER
+                log.warn("{}: {} 0x{:X} {} {} {} {}".format(e.opname, len(es), e.ea, e, e.x, dr, e.type.dstr()))
+                es.append(e)
 
             if e.op == idaapi.cot_memref or e.op == idaapi.cot_memptr:
                 moff = e.m
