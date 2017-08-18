@@ -1,8 +1,12 @@
 """
 Referee creates struct xrefs for decompiled functions
 """
+import logging
 
 import idaapi
+
+logging.basicConfig(level=logging.ERROR)
+log = logging.getLogger("referee")
 
 
 def is_assn(t):
@@ -75,21 +79,22 @@ def add_struct_xrefs(cfunc):
                             ea = parent.ea
                             break
 
-
                 if s:
                     idaapi.add_dref(ea, stid, idaapi.dr_R | idaapi.XREF_USER)
-                    idaapi.msg(
-                            "Referee add_dref in 0x{:X} on struct {} (id: 0x{:X})\n".format(
-                                ea, strname, stid))
+                    log.debug(("xref from 0x{:X} "
+                               "to struct {} (id: 0x{:X})").format(
+                               ea, strname, stid))
                     if mem:
                         idaapi.add_dref(ea, mem.id, dr)
-                        idaapi.msg(
-                                "Referee add_dref in 0x{:X} on struct member {}.{} (id: 0x{:X})\n".format(
-                                    ea, strname, idaapi.get_member_name(mem.id), mem.id))
+                        log.debug(("xref from 0x{:X} "
+                                   "to struct member {}.{} "
+                                   "(id: 0x{:X})").format(
+                                   ea, strname,
+                                   idaapi.get_member_name(mem.id), mem.id))
                 else:
-                    idaapi.msg(
-                            "Referee failure in 0x{:X} on struct {} (id: 0x{:X})\n".format(
-                                ea, strname, stid))
+                    log.error(("xref failure from 0x{:X} "
+                               "to struct {} (id: 0x{:X})").format(
+                               ea, strname, stid))
 
             return 0
     adder = xref_adder_t(cfunc)
@@ -104,12 +109,14 @@ def clear_struct_xrefs(cfunc):
             idaapi.del_dref(cfunc.entry_ea, xb.to)
         ok = xb.next_from()
 
+
 def callback(*args):
     if args[0] == idaapi.hxe_maturity:
         cfunc = args[1]
         mat = args[2]
         if mat == idaapi.CMAT_FINAL:
-            idaapi.msg("Referee analyzing function at 0x{:X}\n".format(cfunc.entry_ea))
+            log.debug("analyzing function at 0x{:X}".format(
+                cfunc.entry_ea))
             clear_struct_xrefs(cfunc)
             add_struct_xrefs(cfunc)
     return 0
@@ -128,9 +135,9 @@ class Referee(idaapi.plugin_t):
             return idaapi.PLUGIN_SKIP
 
         idaapi.install_hexrays_callback(callback)
-        idaapi.msg(
-                "Hex-Rays version {0} has been detected; {1} is ready to use\n".format(
-                    idaapi.get_hexrays_version(), self.wanted_name))
+        log.info(("Hex-Rays version {} has been detected; "
+                  "{} is ready to use").format(
+                  idaapi.get_hexrays_version(), self.wanted_name))
         self.inited = True
         return idaapi.PLUGIN_KEEP
 
