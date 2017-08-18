@@ -56,11 +56,10 @@ def add_struct_xrefs(cfunc):
                 if e.op == idaapi.cot_memptr:
                     typ.remove_ptr_or_array()
 
-                
                 strname = typ.dstr()
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
-                stid  = idaapi.get_struc_id(strname)
+                stid = idaapi.get_struc_id(strname)
                 s = idaapi.get_struc(stid)
                 mem = idaapi.get_member(s, moff)
                 if e.ea != idaapi.BADADDR:
@@ -92,7 +91,6 @@ def add_struct_xrefs(cfunc):
                             "Referee failure in 0x{:X} on struct {} (id: 0x{:X})\n".format(
                                 ea, strname, stid))
 
-                    
             return 0
     adder = xref_adder_t(cfunc)
     adder.apply_to_exprs(cfunc.body, None)
@@ -121,7 +119,7 @@ class Referee(idaapi.plugin_t):
     flags = idaapi.PLUGIN_HIDE
     comment = "Adds struct xref info from decompilation"
     help = ""
-    
+
     wanted_name = "Referee"
     wanted_hotkey = ""
 
