@@ -5,11 +5,13 @@ import logging
 
 import idaapi
 
-logging.basicConfig(level=logging.WARN)
+# logging.basicConfig(level=logging.WARN)
+logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger("referee")
 
 
 es = []
+
 
 def is_assn(t):
     return (
@@ -33,73 +35,96 @@ def add_struct_xrefs(cfunc):
             idaapi.ctree_visitor_t.__init__(self, idaapi.CV_PARENTS)
             self.cfunc = cfunc
 
+        def find_addr(self, e):
+            if e.ea != idaapi.BADADDR:
+                ea = e.ea
+            else:
+                while True:
+                    e = self.cfunc.body.find_parent_of(e)
+                    if e is None:
+                        ea = self.cfunc.entry_ea
+                        break
+                    if e.ea != idaapi.BADADDR:
+                        ea = e.ea
+                        break
+            return ea
+
+        # def go_up(self, e):
+        #     while e.is_expr():
+        #         e = e.cexpr
+        #         e = self.cfunc.body.find_parent_of(e)
+        #         if e.op not in (idaapi.cot_ref, idaapi.cot_memref, idaapi.cot_
+
         def visit_expr(self, e):
             dr = idaapi.dr_R | idaapi.XREF_USER
 
-            if e.type.is_struct():
-                log.warn("STRUCT {}: {} 0x{:X} {} {} {} {}".format(e.opname, len(es), e.ea, e, e.x, dr, e.type.dstr()))
-
-            # We wish to know what context a struct usage occurs in
-            # so we can determine what kind of xref to create. Unfortunately,
-            # a post-order traversal makes this difficult.
-
-            # For assignments, we visit the left, instead
-            # Note that immediate lvalues will be visited twice,
-            # and will be eronneously marked with a read dref.
-            # However, it is safer to overapproximate than underapproximate
-            if is_assn(e.op):
-                e = e.x
-                dr = idaapi.dr_W | idaapi.XREF_USER
-                log.warn("{}: {} 0x{:X} {} {} {} {}".format(e.opname, len(es), e.ea, e, e.x, dr, e.type.dstr()))
-                es.append(e)
-
-            if e.op == idaapi.cot_ref:
-                e = e.x
-                dr = idaapi.dr_O | idaapi.XREF_USER
-                log.warn("{}: {} 0x{:X} {} {} {} {}".format(e.opname, len(es), e.ea, e, e.x, dr, e.type.dstr()))
-                es.append(e)
-
-            if e.op == idaapi.cot_memref or e.op == idaapi.cot_memptr:
-                moff = e.m
-
-                # The only way I could figure out how
-                # to get the structure/member assocaited with its use
-                typ = e.x.type
-
-                if e.op == idaapi.cot_memptr:
-                    typ.remove_ptr_or_array()
-
+            typ = e.type
+            typ.remove_ptr_or_array()
+            if typ.is_struct():
                 strname = typ.dstr()
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
                 stid = idaapi.get_struc_id(strname)
                 s = idaapi.get_struc(stid)
-                mem = idaapi.get_member(s, moff)
-                if e.ea != idaapi.BADADDR:
-                    ea = e.ea
-                else:
-                    parent = e
-                    while True:
-                        parent = self.cfunc.body.find_parent_of(parent)
-                        if parent is None:
-                            ea = self.cfunc.entry_ea
-                            break
-                        if parent.ea != idaapi.BADADDR:
-                            ea = parent.ea
-                            break
+                ea = self.find_addr(e)
+                # log.warn("STRUCT {:>6}: {:>3} 0x{:010X} {:>10}".format(e.opname, len(es), ea, e.type.dstr()))
+                es.append(e)
 
                 if s:
-                    idaapi.add_dref(ea, stid, idaapi.dr_R | idaapi.XREF_USER)
+
+                    # if is_assn(e.op):
+                    #     e = e.x
+                    #     dr = idaapi.dr_W | idaapi.XREF_USER
+                        # log.warn("ASSGN {}:\t{}\t0x{:X}\t{}\t{}".format(e.opname, len(es), e.ea, dr, e.type.dstr()))
+                        # s.append(e)
+
+                    parent = self.cfunc.body.find_parent_of(e)
+                    grandparent = self.cfunc.body.find_parent_of(parent)
+                    if (parent and grandparent and
+                       (is_assn(parent.op) and parent.cexpr.x == e) or
+                       (parent.op in (idaapi.cot_memref, idaapi.cot_memptr) and
+                            is_assn(grandparent.op) and
+                            grandparent.cexpr.x == parent.cexpr)):
+                        dr = idaapi.dr_W | idaapi.XREF_USER
+
+                    # &x
+                    if e.op == idaapi.cot_ref:
+                        dr = idaapi.dr_O | idaapi.XREF_USER
+                        # idaapi.add_dref(ea, stid, dr)
+                        # # idaapi.add_dref(ea, stid, idaapi.dr_R | idaapi.XREF_USER)
+                        # log.debug(("xref from 0x{:X} "
+                        #            "to struct {} (id: 0x{:X}) "
+                        #            "(type: 0x{:X}").format(
+                        #            ea, strname, stid, dr))
+
+                    # x.m, x->m
+                    elif (e.op == idaapi.cot_memref or
+                          e.op == idaapi.cot_memptr):
+                        moff = e.m
+
+                        mem = idaapi.get_member(s, moff)
+
+                        # idaapi.add_dref(ea, stid, dr)
+                        # log.debug(("xref from 0x{:X} "
+                        #            "to struct {} (id: 0x{:X}) "
+                        #            "(type: 0x{:X}").format(
+                        #            ea, strname, stid, dr))
+                        if mem:
+                            idaapi.add_dref(ea, mem.id, dr)
+                            log.debug(("xref from 0x{:X} "
+                                       "to struct member {}.{} "
+                                       "(id: 0x{:X}) "
+                                       "(type: 0x{:X}").format(
+                                       ea, strname,
+                                       idaapi.get_member_name(mem.id), mem.id,
+                                       dr))
+                    else:  # var, etc.
+                        pass
+                    idaapi.add_dref(ea, stid, dr)
                     log.debug(("xref from 0x{:X} "
-                               "to struct {} (id: 0x{:X})").format(
-                               ea, strname, stid))
-                    if mem:
-                        idaapi.add_dref(ea, mem.id, dr)
-                        log.debug(("xref from 0x{:X} "
-                                   "to struct member {}.{} "
-                                   "(id: 0x{:X})").format(
-                                   ea, strname,
-                                   idaapi.get_member_name(mem.id), mem.id))
+                               "to struct {} "
+                               "(type: 0x{:X})").format(
+                               ea, strname, dr))
                 else:
                     log.error(("xref failure from 0x{:X} "
                                "to struct {} (id: 0x{:X})").format(
