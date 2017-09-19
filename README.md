@@ -27,6 +27,7 @@ Referee does not do type inference; you will still need to give types to your fu
 
  * If you annotate a function to remove a struct-member usage, decompiling the function again will remove the corresponding xrefs.
  * Referee only tracks accesses to structure members, not pointer-passing. Writes and references to structure members are also marked as reads.
+ * Configuring debug output: `logging.getLogger('referee').setLevel(logging.DEBUG)`
 
 ## Related
 - http://reverseengineering.stackexchange.com/questions/2139/is-it-possible-to-create-data-xrefs-manually
