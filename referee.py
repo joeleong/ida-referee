@@ -121,6 +121,23 @@ def add_struct_xrefs(cfunc):
                                "on struct {} (id: 0x{:X}) {}").format(
                                ea, strname, stid, flags_to_str(dr)))
 
+            elif idaapi.is_lvalue(e.op) and e.type.is_struct():
+                strname = e.type.dstr()
+                if strname.startswith("struct "):
+                    strname = strname[len("struct "):]
+
+                stid = idaapi.get_struc_id(strname)
+                struc = idaapi.get_struc(stid)
+
+                if struc is not None:
+                    if (ea, stid) not in self.xrefs or dr < self.xrefs[(ea, stid)]:
+                        self.xrefs[(ea, stid)] = dr
+                        idaapi.add_dref(ea, stid, dr)
+                        log.debug((" 0x{:X} \t"
+                                   "struct {} \t"
+                                   "{}").format(
+                                   ea, strname, flags_to_str(dr)))
+
             return 0
 
     adder = xref_adder_t(cfunc)
