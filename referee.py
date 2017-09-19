@@ -25,6 +25,14 @@ def is_assn(t):
         t == idaapi.cot_asgumod)
 
 
+def is_incdec(t):
+    return (
+        t == idaapi.cot_postinc or  # = 53,  ///< x++
+        t == idaapi.cot_postdec or  # = 54,  ///< x--
+        t == idaapi.cot_preinc  or  # = 55,  ///< ++x
+        t == idaapi.cot_predec)     # = 56,  ///< --x
+
+
 def add_struct_xrefs(cfunc):
     class xref_adder_t(idaapi.ctree_visitor_t):
         def __init__(self, cfunc):
@@ -58,7 +66,7 @@ def add_struct_xrefs(cfunc):
             # Note that immediate lvalues will be visited twice,
             # and will be eronneously marked with a read dref.
             # However, it is safer to overapproximate than underapproximate
-            if is_assn(e.op):
+            if is_assn(e.op) or is_incdec(e.op):
                 e = e.x
                 dr = idaapi.dr_W | idaapi.XREF_USER
 
@@ -84,10 +92,10 @@ def add_struct_xrefs(cfunc):
                     strname = strname[len("struct "):]
 
                 stid = idaapi.get_struc_id(strname)
-                s = idaapi.get_struc(stid)
-                mem = idaapi.get_member(s, moff)
+                struc = idaapi.get_struc(stid)
+                mem = idaapi.get_member(struc, moff)
 
-                if s is not None:
+                if struc is not None:
                     if (ea, stid) not in self.xrefs or dr < self.xrefs[(ea, stid)]:
                         self.xrefs[(ea, stid)] = dr
                         idaapi.add_dref(ea, stid, dr)
