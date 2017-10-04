@@ -2,12 +2,17 @@
 Referee creates struct xrefs for decompiled functions
 """
 import logging
+import traceback
 
 import idaapi
 
 # logging.basicConfig(level=logging.WARN)
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger("referee")
+
+
+NETNODE_NAME = '$ referee-xrefs'
+NETNODE_TAG = 'X'
 
 
 def is_assn(t):
@@ -39,7 +44,41 @@ def add_struct_xrefs(cfunc):
         def __init__(self, cfunc):
             idaapi.ctree_visitor_t.__init__(self, idaapi.CV_PARENTS)
             self.cfunc = cfunc
+            self.node = idaapi.netnode()
+            self.clear_struct_xrefs()
             self.xrefs = {}
+
+        def load(self):
+            try:
+                data = self.node.getblob_ea(self.cfunc.entry_ea, NETNODE_TAG)
+                if data:
+                    xrefs = eval(data)
+                    log.debug('Loaded {} xrefs'.format(len(xrefs)))
+                    return xrefs
+            except:
+                log.error('Failed to load xrefs from netnode')
+                traceback.print_exc()
+            return {}
+
+        def save(self):
+            try:
+                self.node.setblob_ea(repr(self.xrefs), self.cfunc.entry_ea, NETNODE_TAG)
+            except:
+                log.error('Failed to save xrefs to netnode')
+                traceback.print_exc()
+
+        def clear_struct_xrefs(self):
+            if not self.node.create(NETNODE_NAME):
+                xrefs = self.load()
+                for (ea, struct_id, member_id) in xrefs.keys():
+                    if member_id is None:
+                        idaapi.del_dref(ea, struct_id)
+                    else:
+                        idaapi.del_dref(ea, member_id)
+                self.xrefs = {}
+                self.save()
+                log.debug('Cleared {} xrefs'.format(len(xrefs)))
+
 
         def find_addr(self, e):
             if e.ea != idaapi.BADADDR:
@@ -54,6 +93,26 @@ def add_struct_xrefs(cfunc):
                         ea = e.ea
                         break
             return ea
+
+        def add_dref(self, ea, struct_id, flags, member_id=None):
+            if (ea, struct_id, member_id) not in self.xrefs or flags < self.xrefs[(ea, struct_id, member_id)]:
+                self.xrefs[(ea, struct_id, member_id)] = flags
+                strname = get_struc_name(struct_id)
+                if member_id is None:
+                    idaapi.add_dref(ea, struct_id, flags)
+                    log.debug((" 0x{:X} \t"
+                               "struct {} \t"
+                               "{}").format(
+                               ea, strname, flags_to_str(flags)))
+                else:
+                    idaapi.add_dref(ea, member_id, flags)
+                    log.debug((" 0x{:X} \t"
+                               "member {}.{} \t"
+                               "{}").format(
+                               ea, strname,
+                               idaapi.get_member_name(member_id),
+                               flags_to_str(flags)))
+            self.save()
 
         def visit_expr(self, e):
             dr = idaapi.dr_R | idaapi.XREF_USER
@@ -97,24 +156,9 @@ def add_struct_xrefs(cfunc):
                 mem = idaapi.get_member(struc, moff)
 
                 if struc is not None:
-                    if (ea, stid) not in self.xrefs or dr < self.xrefs[(ea, stid)]:
-                        self.xrefs[(ea, stid)] = dr
-                        idaapi.add_dref(ea, stid, dr)
-                        log.debug((" 0x{:X} \t"
-                                   "struct {} \t"
-                                   "{}").format(
-                                   ea, strname, flags_to_str(dr)))
-
+                    self.add_dref(ea, stid, dr)
                     if mem is not None:
-                        if (ea, mem.id) not in self.xrefs or dr < self.xrefs[(ea, mem.id)]:
-                            self.xrefs[(ea, mem.id)] = dr
-                            idaapi.add_dref(ea, mem.id, dr)
-                            log.debug((" 0x{:X} \t"
-                                       "member {}.{} \t"
-                                       "{}").format(
-                                       ea, strname,
-                                       idaapi.get_member_name(mem.id),
-                                       flags_to_str(dr)))
+                        self.add_dref(ea, stid, dr, mem.id)
 
                 else:
                     log.error(("failure from 0x{:X} "
@@ -130,13 +174,7 @@ def add_struct_xrefs(cfunc):
                 struc = idaapi.get_struc(stid)
 
                 if struc is not None:
-                    if (ea, stid) not in self.xrefs or dr < self.xrefs[(ea, stid)]:
-                        self.xrefs[(ea, stid)] = dr
-                        idaapi.add_dref(ea, stid, dr)
-                        log.debug((" 0x{:X} \t"
-                                   "struct {} \t"
-                                   "{}").format(
-                                   ea, strname, flags_to_str(dr)))
+                    self.add_dref(ea, stid, dr)
 
             return 0
 
@@ -144,13 +182,6 @@ def add_struct_xrefs(cfunc):
     adder.apply_to_exprs(cfunc.body, None)
 
 
-def clear_struct_xrefs(cfunc):
-    xb = idaapi.xrefblk_t()
-    ok = xb.first_from(cfunc.entry_ea, idaapi.XREF_DATA)
-    while ok:
-        if xb.user == 1:
-            idaapi.del_dref(cfunc.entry_ea, xb.to)
-        ok = xb.next_from()
 
 
 def callback(*args):
@@ -160,7 +191,6 @@ def callback(*args):
         if mat == idaapi.CMAT_FINAL:
             log.debug("analyzing function at 0x{:X}".format(
                 cfunc.entry_ea))
-            clear_struct_xrefs(cfunc)
             add_struct_xrefs(cfunc)
     return 0
 
