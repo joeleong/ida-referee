@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Referee creates struct xrefs for decompiled functions
 """
@@ -62,7 +63,9 @@ def add_struct_xrefs(cfunc):
 
         def save(self):
             try:
-                self.node.setblob_ea(repr(self.xrefs), self.cfunc.entry_ea, NETNODE_TAG)
+                self.node.setblob_ea(repr(self.xrefs),
+                                     self.cfunc.entry_ea,
+                                     NETNODE_TAG)
             except:
                 log.error('Failed to save xrefs to netnode')
                 traceback.print_exc()
@@ -79,7 +82,6 @@ def add_struct_xrefs(cfunc):
                 self.save()
                 log.debug('Cleared {} xrefs'.format(len(xrefs)))
 
-
         def find_addr(self, e):
             if e.ea != idaapi.BADADDR:
                 ea = e.ea
@@ -95,9 +97,10 @@ def add_struct_xrefs(cfunc):
             return ea
 
         def add_dref(self, ea, struct_id, flags, member_id=None):
-            if (ea, struct_id, member_id) not in self.xrefs or flags < self.xrefs[(ea, struct_id, member_id)]:
+            if ((ea, struct_id, member_id) not in self.xrefs or
+                    flags < self.xrefs[(ea, struct_id, member_id)]):
                 self.xrefs[(ea, struct_id, member_id)] = flags
-                strname = get_struc_name(struct_id)
+                strname = idaapi.get_struc_name(struct_id)
                 if member_id is None:
                     idaapi.add_dref(ea, struct_id, flags)
                     log.debug((" 0x{:X} \t"
@@ -136,8 +139,7 @@ def add_struct_xrefs(cfunc):
                 dr = idaapi.dr_O | idaapi.XREF_USER
 
             # x.m, x->m
-            if (e.op == idaapi.cot_memref or
-                  e.op == idaapi.cot_memptr):
+            if (e.op == idaapi.cot_memref or e.op == idaapi.cot_memptr):
                 moff = e.m
 
                 # The only way I could figure out how
@@ -180,8 +182,6 @@ def add_struct_xrefs(cfunc):
 
     adder = xref_adder_t(cfunc)
     adder.apply_to_exprs(cfunc.body, None)
-
-
 
 
 def callback(*args):
