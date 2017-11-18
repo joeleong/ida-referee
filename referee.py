@@ -6,9 +6,13 @@ import logging
 import traceback
 
 import idaapi
+import ida_idaapi
+import ida_kernwin
+import ida_struct
 
-# logging.basicConfig(level=logging.WARN)
-logging.basicConfig(level=logging.DEBUG)
+
+logging.basicConfig(level=logging.WARN)
+# logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger("referee")
 
 
@@ -226,6 +230,162 @@ class Referee(idaapi.plugin_t):
 
 def PLUGIN_ENTRY():
     return Referee()
+
+
+class hx_xrefs_action_handler_t(idaapi.action_handler_t):
+    def __init__(self):
+        idaapi.action_handler_t.__init__(self)
+
+    def activate(self, ctx):
+        # self.get_struct_or_member_name(ctx)
+        # self.get_current_struct_name(ctx)
+        xref_id = self.get_current_structure_id(ctx)
+        if xref_id:
+            chooser = XrefChooser(xref_id)
+            chooser.Show()
+            # chooser.Show(True)
+        return 1
+
+    def update(self, ctx):
+        return idaapi.AST_ENABLE_ALWAYS
+
+    def get_current_structure_id(self, ctx):
+        view = ida_kernwin.get_current_viewer()
+        from_mouse = False
+        line = ida_kernwin.get_custom_viewer_curline(view, from_mouse)
+        if '\x01(' in line:
+            obj_id = int(line.split('\x01(')[1][:16], 16)
+            if idaapi.is_member_id(obj_id):
+                log.debug("retrieving xrefs for member: {}".format(
+                    ida_struct.get_member_name(ctx.cur_strmem.id)))
+            else:
+                log.debug("retrieving xrefs for structure: {}".format(
+                    ida_struct.get_struc_name(ctx.cur_struc.id)))
+            return obj_id
+        return None
+
+    def get_current_struct_name(self, ctx):
+        view = ida_kernwin.get_current_viewer()
+        from_mouse = False
+        line = ida_kernwin.get_custom_viewer_curline(view, from_mouse)
+        # print(line)
+        print(repr(line))
+        print("Current structure: %s" % hex(ctx.cur_struc.id))
+        print("Current member: %s" % hex(ctx.cur_strmem.id))
+        if '\x01(' in line:
+            obj_id = int(line.split('\x01(')[1][:16], 16)
+            if idaapi.is_member_id(obj_id):
+                print("Current member: %s" % ida_struct.get_member_name(ctx.cur_strmem.id))
+            else:
+                print("Current structure: %s" % ida_struct.get_struc_name(ctx.cur_struc.id))
+        return ida_lines.tag_remove(line).split()[1]
+
+    def get_struct_or_member_name(self, ctx):
+       if ctx.cur_struc and ctx.cur_struc.id != ida_idaapi.BADADDR:
+          print("Current structure: %s" % ida_struct.get_struc_name(ctx.cur_struc.id))
+          print("Current member: %s" % ida_struct.get_member_name(ctx.cur_strmem.id))
+          print("Current highlight: {} {}".format(*ida_kernwin.get_highlight(ctx.widget)))
+          chooser = XrefChooser(ctx.cur_strmem.id)
+          print(chooser.Show())
+          # print(chooser.Show(True))
+
+
+action_desc = idaapi.action_desc_t(
+    'referee:hx_xrefs',                    # The action name. This acts like an ID and must be unique
+    'List Xrefs with decompiler output',   # The action text.
+    hx_xrefs_action_handler_t(),           # The action handler.
+    'Ctrl-Shift-X',                        # Optional: the action shortcut
+    'Lists Xrefs with decompiler output',  # Optional: the action tooltip (available in menus/toolbar)
+    199)                                   # Optional: the action icon (shows when in menus/toolbars)
+
+class my_hooks_t(ida_kernwin.UI_Hooks):
+    def __init__(self):
+        ida_kernwin.UI_Hooks.__init__(self)
+
+    def finish_populating_widget_popup(self, widget, popup):
+        if ida_kernwin.get_widget_type(widget) == ida_kernwin.BWN_STRUCTS:
+            ida_kernwin.attach_action_to_popup(widget, popup, 'referee:hx_refs')
+
+idaapi.register_action(action_desc)
+my_hooks = my_hooks_t()
+my_hooks.hook()
+# struct_widget = idaapi.create_empty_widget('Structures')
+# idaapi.attach_action_to_popup(struct_widget, None, 'referee:hx_xrefs', None)
+
+
+class XrefChooser(ida_kernwin.Choose):
+    def __init__(self, xref_id):
+        ida_kernwin.Choose.__init__(
+                self,
+                'xrefs to {}'.format(idaapi.get_member_fullname(xref_id)),
+                [["Direction",   4   | ida_kernwin.Choose.CHCOL_PLAIN],
+                 ["Type",        3   | ida_kernwin.Choose.CHCOL_PLAIN],
+                 ["Address",     8  | ida_kernwin.Choose.CHCOL_HEX],
+                 ["Function",   10  | ida_kernwin.Choose.CHCOL_PLAIN],
+                 ["Pseudocode", 20  | ida_kernwin.Choose.CHCOL_PLAIN],
+                 ["Disasm",     20  | ida_kernwin.Choose.CHCOL_PLAIN]],
+                icon=-1)
+                # flags=Choose.CH_NOIDB,
+                # embedded=True, width=30, height=20)
+
+        self.items = []
+        xb = idaapi.xrefblk_t()
+        ok = xb.first_to(xref_id, idaapi.XREF_ALL)
+        # ok = xb.first_to(xref_id, idaapi.XREF_DATA)
+        while ok:
+            self.items.append((xb.frm, xb.type))
+            ok = xb.next_to()
+
+        log.warn(self.items)
+
+    def OnGetLine(self, n):
+        ea, flags = self.items[n]
+        funcname = idaapi.get_func_name(ea)
+        func = idaapi.get_func(ea)
+        offset = 0
+        if func is not None:
+            offset = ea - func.start_ea
+        if funcname is None:
+            funcname = ''
+        elif offset:
+            funcname = '{}+{:X}'.format(funcname, offset)
+        if ea == idaapi.get_screen_ea():
+            direction = '↔'
+        elif ea > idaapi.get_screen_ea():
+            direction = '↓ Down'
+        else:
+            direction = '↑ Up'
+        disasm = idaapi.generate_disasm_line(ea)
+        if disasm is not None:
+            disasm = idaapi.tag_remove(disasm)
+        else:
+            disasm = ''
+        return [direction,
+                flags_to_str(flags).strip('dr_').lower(),
+                '0x{:X}'.format(ea),
+                funcname,
+                self.get_decompiled_line(ea),
+                disasm]
+
+    def OnGetSize(self):
+        return len(self.items)
+
+    def OnSelectLine(self, n):
+        ea, flags = self.items[n]
+        if ea != ida_idaapi.BADADDR:
+            idaapi.open_pseudocode(ea)
+            return True
+
+    def get_decompiled_line(self, ea):
+        cfunc = idaapi.decompile(ea)
+        if cfunc is None:
+            return ''
+        if ea not in cfunc.eamap:
+            print 'strange, %x is not in %x eamap' % (ea, cfunc.entry_ea)
+            return ''
+        return '\n'.join(
+                idaapi.tag_remove(stmt.print1(cfunc.__deref__()))
+                for stmt in cfunc.eamap[ea])
 
 
 def flags_to_str(num):
