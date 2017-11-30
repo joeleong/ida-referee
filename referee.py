@@ -32,8 +32,23 @@ def add_struct_xrefs(cfunc):
             self.cfunc = cfunc
             self.xrefs = {}
 
+        def find_addr(self, e):
+            if e.ea != idaapi.BADADDR:
+                ea = e.ea
+            else:
+                while True:
+                    e = self.cfunc.body.find_parent_of(e)
+                    if e is None:
+                        ea = self.cfunc.entry_ea
+                        break
+                    if e.ea != idaapi.BADADDR:
+                        ea = e.ea
+                        break
+            return ea
+
         def visit_expr(self, e):
             dr = idaapi.dr_R | idaapi.XREF_USER
+            ea = self.find_addr(e)
 
             # We wish to know what context a struct usage occurs in
             # so we can determine what kind of xref to create. Unfortunately,
@@ -68,19 +83,6 @@ def add_struct_xrefs(cfunc):
                 stid = idaapi.get_struc_id(strname)
                 s = idaapi.get_struc(stid)
                 mem = idaapi.get_member(s, moff)
-                if e.ea != idaapi.BADADDR:
-                    ea = e.ea
-                else:
-                    parent = e
-                    while True:
-                        parent = self.cfunc.body.find_parent_of(parent)
-                        if parent is None:
-                            ea = self.cfunc.entry_ea
-                            break
-                        if parent.ea != idaapi.BADADDR:
-                            ea = parent.ea
-                            break
-
 
                 if s is not None:
                     if (ea, stid) not in self.xrefs or dr < self.xrefs[(ea, stid)]:
