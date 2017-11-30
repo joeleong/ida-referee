@@ -2,11 +2,16 @@
 Referee creates struct xrefs for decompiled functions
 """
 import logging
+import traceback
 
 import idaapi
 
 logging.basicConfig(level=logging.WARN)
 log = logging.getLogger("referee")
+
+
+NETNODE_NAME = '$ referee-xrefs'
+NETNODE_TAG = 'X'
 
 
 def is_assn(t):
@@ -38,7 +43,41 @@ def add_struct_xrefs(cfunc):
         def __init__(self, cfunc):
             idaapi.ctree_visitor_t.__init__(self, idaapi.CV_PARENTS)
             self.cfunc = cfunc
+            self.node = idaapi.netnode()
+            self.clear_struct_xrefs()
             self.xrefs = {}
+
+        def load(self):
+            try:
+                data = self.node.getblob_ea(self.cfunc.entry_ea, NETNODE_TAG)
+                if data:
+                    xrefs = eval(data)
+                    log.debug('Loaded {} xrefs'.format(len(xrefs)))
+                    return xrefs
+            except:
+                log.error('Failed to load xrefs from netnode')
+                traceback.print_exc()
+            return {}
+
+        def save(self):
+            try:
+                self.node.setblob_ea(repr(self.xrefs), self.cfunc.entry_ea, NETNODE_TAG)
+            except:
+                log.error('Failed to save xrefs to netnode')
+                traceback.print_exc()
+
+        def clear_struct_xrefs(self):
+            if not self.node.create(NETNODE_NAME):
+                xrefs = self.load()
+                for (ea, struct_id, member_id) in xrefs.keys():
+                    if member_id is None:
+                        idaapi.del_dref(ea, struct_id)
+                    else:
+                        idaapi.del_dref(ea, member_id)
+                self.xrefs = {}
+                self.save()
+                log.debug('Cleared {} xrefs'.format(len(xrefs)))
+
 
         def find_addr(self, e):
             if e.ea != idaapi.BADADDR:
@@ -143,13 +182,6 @@ def add_struct_xrefs(cfunc):
     adder.apply_to_exprs(cfunc.body, None)
 
 
-def clear_struct_xrefs(cfunc):
-    xb = idaapi.xrefblk_t()
-    ok = xb.first_from(cfunc.entry_ea, idaapi.XREF_DATA)
-    while ok:
-        if xb.user == 1:
-            idaapi.del_dref(cfunc.entry_ea, xb.to)
-        ok = xb.next_from()
 
 
 def callback(*args):
@@ -159,7 +191,6 @@ def callback(*args):
         if mat == idaapi.CMAT_FINAL:
             log.debug("analyzing function at 0x{:X}".format(
                 cfunc.entry_ea))
-            clear_struct_xrefs(cfunc)
             add_struct_xrefs(cfunc)
     return 0
 
