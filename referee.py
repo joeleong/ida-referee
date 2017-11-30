@@ -62,15 +62,18 @@ def add_struct_xrefs(cfunc):
                 e = e.x
                 dr = idaapi.dr_W | idaapi.XREF_USER
 
+            # &x
             if e.op == idaapi.cot_ref:
                 e = e.x
                 dr = idaapi.dr_O | idaapi.XREF_USER
 
-            if e.op == idaapi.cot_memref or e.op == idaapi.cot_memptr:
+            # x.m, x->m
+            if (e.op == idaapi.cot_memref or
+                  e.op == idaapi.cot_memptr):
                 moff = e.m
 
                 # The only way I could figure out how
-                # to get the structure/member assocaited with its use
+                # to get the structure/member associated with its use
                 typ = e.x.type
 
                 if e.op == idaapi.cot_memptr:
@@ -156,6 +159,7 @@ class Referee(idaapi.plugin_t):
         return idaapi.PLUGIN_KEEP
 
     def run(self, arg):
+        # never called
         pass
 
     def term(self):
