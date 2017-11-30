@@ -5,7 +5,7 @@ import logging
 
 import idaapi
 
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.WARN)
 log = logging.getLogger("referee")
 
 
@@ -30,6 +30,7 @@ def add_struct_xrefs(cfunc):
         def __init__(self, cfunc):
             idaapi.ctree_visitor_t.__init__(self, idaapi.CV_PARENTS)
             self.cfunc = cfunc
+            self.xrefs = {}
 
         def visit_expr(self, e):
             dr = idaapi.dr_R | idaapi.XREF_USER
@@ -63,6 +64,7 @@ def add_struct_xrefs(cfunc):
                 strname = typ.dstr()
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
+
                 stid = idaapi.get_struc_id(strname)
                 s = idaapi.get_struc(stid)
                 mem = idaapi.get_member(s, moff)
@@ -79,24 +81,34 @@ def add_struct_xrefs(cfunc):
                             ea = parent.ea
                             break
 
-                if s:
-                    idaapi.add_dref(ea, stid, idaapi.dr_R | idaapi.XREF_USER)
-                    log.debug(("xref from 0x{:X} "
-                               "to struct {} (id: 0x{:X})").format(
-                               ea, strname, stid))
-                    if mem:
-                        idaapi.add_dref(ea, mem.id, dr)
-                        log.debug(("xref from 0x{:X} "
-                                   "to struct member {}.{} "
-                                   "(id: 0x{:X})").format(
-                                   ea, strname,
-                                   idaapi.get_member_name(mem.id), mem.id))
+
+                if s is not None:
+                    if (ea, stid) not in self.xrefs or dr < self.xrefs[(ea, stid)]:
+                        self.xrefs[(ea, stid)] = dr
+                        idaapi.add_dref(ea, stid, dr)
+                        log.debug((" 0x{:X} \t"
+                                   "struct {} \t"
+                                   "{}").format(
+                                   ea, strname, flags_to_str(dr)))
+
+                    if mem is not None:
+                        if (ea, mem.id) not in self.xrefs or dr < self.xrefs[(ea, mem.id)]:
+                            self.xrefs[(ea, mem.id)] = dr
+                            idaapi.add_dref(ea, mem.id, dr)
+                            log.debug((" 0x{:X} \t"
+                                       "member {}.{} \t"
+                                       "{}").format(
+                                       ea, strname,
+                                       idaapi.get_member_name(mem.id),
+                                       flags_to_str(dr)))
+
                 else:
-                    log.error(("xref failure from 0x{:X} "
-                               "to struct {} (id: 0x{:X})").format(
-                               ea, strname, stid))
+                    log.error(("failure from 0x{:X} "
+                               "on struct {} (id: 0x{:X}) {}").format(
+                               ea, strname, stid, flags_to_str(dr)))
 
             return 0
+
     adder = xref_adder_t(cfunc)
     adder.apply_to_exprs(cfunc.body, None)
 
@@ -152,3 +164,36 @@ class Referee(idaapi.plugin_t):
 
 def PLUGIN_ENTRY():
     return Referee()
+
+
+def flags_to_str(num):
+    match = []
+    if num & idaapi.dr_R == idaapi.dr_R:
+        match.append('dr_R')
+        num ^= idaapi.dr_R
+    if num & idaapi.dr_O == idaapi.dr_O:
+        match.append('dr_O')
+        num ^= idaapi.dr_O
+    if num & idaapi.dr_W == idaapi.dr_W:
+        match.append('dr_W')
+        num ^= idaapi.dr_W
+    if num & idaapi.dr_I == idaapi.dr_I:
+        match.append('dr_I')
+        num ^= idaapi.dr_I
+    if num & idaapi.dr_T == idaapi.dr_T:
+        match.append('dr_T')
+        num ^= idaapi.dr_T
+    if num & idaapi.XREF_USER == idaapi.XREF_USER:
+        match.append('XREF_USER')
+        num ^= idaapi.XREF_USER
+    if num & idaapi.XREF_DATA == idaapi.XREF_DATA:
+        match.append('XREF_DATA')
+        num ^= idaapi.XREF_DATA
+    res = ' | '.join(match)
+    if num:
+        res += ' unknown: 0x{:X}'.format(num)
+    return res
+
+
+def clear_output_window():
+    idaapi.process_ui_action('msglist:Clear')
