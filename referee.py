@@ -151,6 +151,8 @@ def add_struct_xrefs(cfunc):
                 strname = typ.dstr()
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
+                if strname.startswith("const "):
+                    strname = strname[len("const "):]
 
                 stid = idaapi.get_struc_id(strname)
                 struc = idaapi.get_struc(stid)
@@ -170,6 +172,8 @@ def add_struct_xrefs(cfunc):
                 strname = e.type.dstr()
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
+                if strname.startswith("const "):
+                    strname = strname[len("const "):]
 
                 stid = idaapi.get_struc_id(strname)
                 struc = idaapi.get_struc(stid)
