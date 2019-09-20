@@ -19,7 +19,7 @@ Copy the plugin into the IDA "plugins" folder
 
 ## Usage
 
-Referee will automatically run whenever a function is decompiled. It is recommended that you decompile the entire binary for maximum information. You can see the cross-references that Referee adds by opening a structure in the Structures window, highlighting a field of a structure, and pressing "X."
+Referee will automatically run whenever a function is decompiled. It is recommended that you decompile the entire binary for maximum information. This can be done by going to `File > Produce file > Create C file...` and letting it complete. You can see the cross-references that Referee adds by opening a structure in the Structures window, highlighting a field of a structure, and pressing "X."
 
 Referee does not do type inference; you will still need to give types to your functions for it to find structure uses.
 
