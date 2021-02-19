@@ -10,7 +10,7 @@ It's much easier to reverse-engineer a structure when you can find every place i
 
 ## Requirements
 
- * IDA 6.2 or higher
+ * IDA 7.0 or higher
  * Hex-Rays Decompiler 1.6 or higher
 
 ## Installation
