@@ -62,7 +62,7 @@ def add_struct_xrefs(cfunc):
 
         def save(self):
             try:
-                self.node.setblob_ea(repr(self.xrefs),
+                self.node.setblob_ea(repr(self.xrefs).encode(),
                                      self.cfunc.entry_ea,
                                      NETNODE_TAG)
             except:
