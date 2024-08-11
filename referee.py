@@ -6,6 +6,7 @@ import logging
 import traceback
 
 import idaapi
+import idc
 
 logging.basicConfig(level=logging.WARN)
 log = logging.getLogger("referee")
@@ -99,7 +100,7 @@ def add_struct_xrefs(cfunc):
             if ((ea, struct_id, member_id) not in self.xrefs or
                     flags < self.xrefs[(ea, struct_id, member_id)]):
                 self.xrefs[(ea, struct_id, member_id)] = flags
-                strname = idaapi.get_struc_name(struct_id)
+                strname = idc.get_struc_name(struct_id)
                 if member_id is None:
                     idaapi.add_dref(ea, struct_id, flags)
                     log.debug((" 0x{:X} \t"
@@ -112,7 +113,7 @@ def add_struct_xrefs(cfunc):
                                "member {}.{} \t"
                                "{}").format(
                                ea, strname,
-                               idaapi.get_member_name(member_id),
+                               idc.get_member_name(struct_id, member_id),
                                flags_to_str(flags)))
             self.save()
 
@@ -145,23 +146,23 @@ def add_struct_xrefs(cfunc):
                 # to get the structure/member associated with its use
                 typ = e.x.type
 
-                if e.op == idaapi.cot_memptr:
-                    typ.remove_ptr_or_array()
+                if e.op == idaapi.cot_memptr and typ.is_ptr_or_array():
+                    typ = typ.get_ptrarr_object()
 
                 strname = typ.dstr()
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
+                if strname.startswith("union "):
+                    strname = strname[len("union "):]
                 if strname.startswith("const "):
                     strname = strname[len("const "):]
 
-                stid = idaapi.get_struc_id(strname)
-                struc = idaapi.get_struc(stid)
-                mem = idaapi.get_member(struc, moff)
-
-                if struc is not None:
+                stid = idc.get_struc_id(strname)
+                if stid != idaapi.BADADDR:
                     self.add_dref(ea, stid, dr)
-                    if mem is not None:
-                        self.add_dref(ea, stid, dr, mem.id)
+                    member_id = idc.get_member_id(stid, moff)
+                    if member_id != -1:
+                        self.add_dref(ea, stid, dr, member_id)
 
                 else:
                     log.error(("failure from 0x{:X} "
@@ -172,13 +173,13 @@ def add_struct_xrefs(cfunc):
                 strname = e.type.dstr()
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
+                if strname.startswith("union "):
+                    strname = strname[len("union "):]
                 if strname.startswith("const "):
                     strname = strname[len("const "):]
 
-                stid = idaapi.get_struc_id(strname)
-                struc = idaapi.get_struc(stid)
-
-                if struc is not None:
+                stid = idc.get_struc_id(strname)
+                if stid != idaapi.BADADDR:
                     self.add_dref(ea, stid, dr)
 
             return 0
