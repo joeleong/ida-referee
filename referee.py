@@ -2,6 +2,7 @@
 """
 Referee creates struct xrefs for decompiled functions
 """
+import ast
 import logging
 import traceback
 
@@ -52,11 +53,11 @@ def add_struct_xrefs(cfunc):
             try:
                 data = self.node.getblob_ea(self.cfunc.entry_ea, NETNODE_TAG)
                 if data:
-                    xrefs = eval(data)
+                    xrefs = ast.literal_eval(data.decode('utf-8'))
                     log.debug('Loaded {} xrefs'.format(len(xrefs)))
                     return xrefs
-            except:
-                log.error('Failed to load xrefs from netnode')
+            except Exception as e:
+                log.error('Failed to load xrefs from netnode: {}'.format(e))
                 traceback.print_exc()
             return {}
 
@@ -65,8 +66,8 @@ def add_struct_xrefs(cfunc):
                 self.node.setblob_ea(repr(self.xrefs).encode(),
                                      self.cfunc.entry_ea,
                                      NETNODE_TAG)
-            except:
-                log.error('Failed to save xrefs to netnode')
+            except Exception as e:
+                log.error('Failed to save xrefs to netnode: {}'.format(e))
                 traceback.print_exc()
 
         def clear_struct_xrefs(self):
@@ -99,7 +100,7 @@ def add_struct_xrefs(cfunc):
             if ((ea, struct_id, member_id) not in self.xrefs or
                     flags < self.xrefs[(ea, struct_id, member_id)]):
                 self.xrefs[(ea, struct_id, member_id)] = flags
-                strname = idaapi.get_struc_name(struct_id)
+                strname = idaapi.get_tid_name(struct_id)
                 if member_id is None:
                     idaapi.add_dref(ea, struct_id, flags)
                     log.debug((" 0x{:X} \t"
@@ -108,11 +109,15 @@ def add_struct_xrefs(cfunc):
                                ea, strname, flags_to_str(flags)))
                 else:
                     idaapi.add_dref(ea, member_id, flags)
+                    # Get member name - member_id is already the tid of the member type
+                    member_name = idaapi.get_tid_name(member_id)
+                    if member_name is None:
+                        member_name = "<unknown>"
                     log.debug((" 0x{:X} \t"
                                "member {}.{} \t"
                                "{}").format(
                                ea, strname,
-                               idaapi.get_member_name(member_id),
+                               member_name,
                                flags_to_str(flags)))
             self.save()
 
@@ -145,41 +150,55 @@ def add_struct_xrefs(cfunc):
                 # to get the structure/member associated with its use
                 typ = e.x.type
 
-                if e.op == idaapi.cot_memptr:
-                    typ.remove_ptr_or_array()
+                if e.op == idaapi.cot_memptr and typ.is_ptr_or_array():
+                    typ = typ.get_ptrarr_object()
 
-                strname = typ.dstr()
-                if strname.startswith("struct "):
-                    strname = strname[len("struct "):]
-                if strname.startswith("const "):
-                    strname = strname[len("const "):]
+                # typ is already a tinfo_t object - use it directly
+                if typ.is_udt():
+                    # Get the struct name for logging and get its TID
+                    strname = typ.dstr()
+                    # Remove qualifiers and type keywords
+                    strname = strname.replace("const ", "")
+                    strname = strname.replace("volatile ", "")
+                    if strname.startswith("struct "):
+                        strname = strname[len("struct "):]
+                    elif strname.startswith("union "):
+                        strname = strname[len("union "):]
+                    strname = strname.strip()
 
-                stid = idaapi.get_struc_id(strname)
-                struc = idaapi.get_struc(stid)
-                mem = idaapi.get_member(struc, moff)
-
-                if struc is not None:
-                    self.add_dref(ea, stid, dr)
-                    if mem is not None:
-                        self.add_dref(ea, stid, dr, mem.id)
-
-                else:
-                    log.error(("failure from 0x{:X} "
-                               "on struct {} (id: 0x{:X}) {}").format(
-                               ea, strname, stid, flags_to_str(dr)))
+                    stid = idaapi.get_named_type_tid(strname)
+                    if stid and stid != idaapi.BADADDR:
+                        self.add_dref(ea, stid, dr)
+                        # Get member by offset
+                        # Note: moff from e.m is in bytes, but get_udm_by_offset expects bits
+                        idx, udm = typ.get_udm_by_offset(moff * 8)
+                        if idx != -1 and udm:
+                            # Get member tid
+                            member_tid = typ.get_udm_tid(idx)
+                            self.add_dref(ea, stid, dr, member_tid)
+                    else:
+                        log.debug(("skipping struct {} at 0x{:X} - "
+                                   "no valid TID").format(strname, ea))
 
             elif idaapi.is_lvalue(e.op) and e.type.is_struct():
-                strname = e.type.dstr()
+                # e.type is already a tinfo_t object - use it directly
+                typ = e.type
+                strname = typ.dstr()
+                # Remove qualifiers and type keywords
+                strname = strname.replace("const ", "")
+                strname = strname.replace("volatile ", "")
                 if strname.startswith("struct "):
                     strname = strname[len("struct "):]
-                if strname.startswith("const "):
-                    strname = strname[len("const "):]
+                elif strname.startswith("union "):
+                    strname = strname[len("union "):]
+                strname = strname.strip()
 
-                stid = idaapi.get_struc_id(strname)
-                struc = idaapi.get_struc(stid)
-
-                if struc is not None:
+                stid = idaapi.get_named_type_tid(strname)
+                if stid and stid != idaapi.BADADDR:
                     self.add_dref(ea, stid, dr)
+                else:
+                    log.debug(("skipping struct {} at 0x{:X} - "
+                               "no valid TID").format(strname, ea))
 
             return 0
 
@@ -207,6 +226,7 @@ class Referee(idaapi.plugin_t):
     wanted_hotkey = ""
 
     def init(self):
+        self.inited = False
         if not idaapi.init_hexrays_plugin():
             return idaapi.PLUGIN_SKIP
 
